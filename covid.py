@@ -2,17 +2,18 @@ import csv
 import re
 import math
 
-def fixAge(data_rows):
-    for row in data_rows:
-        age = row[1].strip()  # Get the age column value and remove spaces
-        if re.match(r'^\d+-\d+$', age):  # Check if it's an age range
-            lower, upper = map(int, age.split('-'))
-            age = (upper + lower) / 2
-            age = math.ceil(age)
-            row[1] = str(age)
+def fixAge(dataRows):
+    for row in dataRows:
+        age = row[1].strip()  # Remove leading/trailing spaces
+        match = re.match(r'^(\d+)-(\d+)$', age)  # Match age ranges
 
-def fixDate(data_rows):
-    for row in data_rows:
+        if match:
+            lower, upper = map(int, match.groups())  # Extract numbers
+            avg_age = round((lower + upper) / 2)  # Use standard rounding
+            row[1] = str(avg_age)  # Replace with rounded average
+
+def fixDate(dataRows):
+    for row in dataRows:
         for i in [8, 9, 10]:  # Assuming date columns are at indices 8, 9, 10
             date = row[i].strip()
             if date:
@@ -20,72 +21,90 @@ def fixDate(data_rows):
                 new_date = f"{month}.{day}.{year}"
                 row[i] = new_date
 
-def fixLongLat(data_rows):
+def fixLongLat(dataRows):
     province_latitudes = {}
     province_longitudes = {}
-    province_counts = {}
+    
+    province_counts_latitude = {}
+    province_counts_longitude = {}
 
     # First loop to accumulate latitude and longitude totals per province
-    for row in data_rows:
+    for row in dataRows:
         province = row[4].strip()
         latitude = row[6].strip()
         longitude = row[7].strip()
 
+        # Try converting latitude
         try:
-            if latitude.lower() != 'nan' and latitude != "":
-                latitude = float(latitude)  # Convert to float if not 'nan'
-            else:
-                latitude = None  # Mark invalid latitudes as None
+            lat = float(latitude) if latitude and latitude.lower() != 'nan' else None
         except ValueError:
-            latitude = None  # If not a valid number, set to None
+            lat = None
 
+        # Try converting longitude
         try:
-            if longitude.lower() != 'nan' and longitude != "":
-                longitude = float(longitude)  # Convert to float if not 'nan'
-            else:
-                longitude = None  # Mark invalid longitudes as None
+            lon = float(longitude) if longitude and longitude.lower() != 'nan' else None
         except ValueError:
-            longitude = None  # If not a valid number, set to None
+            lon = None
 
-        # Initialize dictionaries for provinces if not already added
+        # Initialize province keys if not already present
         if province not in province_latitudes:
             province_latitudes[province] = 0
+            province_counts_latitude[province] = 0
+        
+        if province not in province_longitudes:
             province_longitudes[province] = 0
-            province_counts[province] = 0
+            province_counts_longitude[province] = 0
 
-        # Add valid latitude and longitude to province totals
-        if latitude is not None:
-            province_latitudes[province] += latitude
-        if longitude is not None:
-            province_longitudes[province] += longitude
-        province_counts[province] += 1  # Increment the count for this province
+        # Accumulate valid latitudes
+        if lat is not None:
+            province_latitudes[province] += lat
+            province_counts_latitude[province] += 1
 
-    # Calculate the averages for each province
+        # Accumulate valid longitudes
+        if lon is not None:
+            province_longitudes[province] += lon
+            province_counts_longitude[province] += 1
+
+    # print(dict(province_latitudes))
+    # print(dict(province_counts_latitude))
+    # print(dict(province_longitudes))
+    # print(dict(province_counts_longitude))
+
+    # Calculate average latitudes and longitudes per province
+    province_avg_lat = {}
+    province_avg_lon = {}
+
     for province in province_latitudes:
-        # Calculate the average
-        province_latitudes[province] /= province_counts[province]
-        province_longitudes[province] /= province_counts[province]
+        if province_counts_latitude[province] > 0:  # Avoid division by zero
+            province_avg_lat[province] = round(province_latitudes[province] / province_counts_latitude[province], 2)
+        else:
+            province_avg_lat[province] = 'NaN'  # If no valid latitudes, assign NaN
 
-        # Round the averages to 2 decimal places
-        province_latitudes[province] = round(province_latitudes[province], 2)
-        province_longitudes[province] = round(province_longitudes[province], 2)
+        if province_counts_longitude[province] > 0:  # Avoid division by zero
+            province_avg_lon[province] = round(province_longitudes[province] / province_counts_longitude[province], 2)
+        else:
+            province_avg_lon[province] = 'NaN'  # If no valid longitudes, assign NaN
+    
+    print(dict(province_avg_lat))
+    print(dict(province_avg_lon))
 
-    # Second loop to update the rows with the calculated average latitudes/longitudes
-    for row in data_rows:
+
+    
+    # Second loop to replace missing latitudes/longitudes in dataRows
+    for row in dataRows:
         province = row[4].strip()
-        latitude = row[6].strip()
-        longitude = row[7].strip()
 
-        if latitude.lower() == 'nan' or latitude == "" or latitude is None:
-            row[6] = str(province_latitudes.get(province, 'NaN'))  # Replace with average latitude
+        if row[6].strip().lower() == 'nan' or row[6].strip() == "":
+            row[6] = str(province_avg_lat.get(province, 'NaN'))  # Replace with average latitude
 
-        if longitude.lower() == 'nan' or longitude == "" or longitude is None:
-            row[7] = str(province_longitudes.get(province, 'NaN'))  # Replace with average longitude
+        if row[7].strip().lower() == 'nan' or row[7].strip() == "":
+            row[7] = str(province_avg_lon.get(province, 'NaN'))  # Replace with average longitude
 
-def fixCity(data_rows):
+
+def fixCity(dataRows):
     provinceCityCounts = {}
 
-    for row in data_rows:
+    for row in dataRows:
         city = row[3].strip()
         province = row[4].strip()
 
@@ -107,24 +126,23 @@ def fixCity(data_rows):
         most_common_city = sorted(cityCounts.items(), key=lambda x: (-x[1], x[0]))[0][0]
         provinceMostCommon[province] = most_common_city
         
-    for row in data_rows:
+    for row in dataRows:
         city = row[3].strip()
         province = row[4].strip()
 
         if city.lower() == 'nan' or city == "" or city is None:
             row[3] = provinceMostCommon.get(province, 'NaN')
 
-def fixSymptom(data_rows):
+def fixSymptom(dataRows):
     provinceSymptom = {}
 
-    for row in data_rows:
+    for row in dataRows:
         province = row[4].strip()
         symptom = row[11].strip()
 
         if symptom.lower() == 'nan' or symptom == "":
             continue
 
-        symptom = symptom.replace('; ', ';').replace(';', ';')
         symptomList = symptom.split(';')
 
         for symptom in symptomList:
@@ -145,7 +163,7 @@ def fixSymptom(data_rows):
         most_common_symptom = sorted(symptomCounts.items(), key=lambda x: (-x[1], x[0]))[0][0]
         provinceMostCommon[province] = most_common_symptom
     
-    for row in data_rows:
+    for row in dataRows:
         province = row[4].strip()
         symptom = row[11].strip()
 
@@ -167,15 +185,15 @@ def main():
             writer.writerow(header)
 
             # Process all rows
-            data_rows = rows[1:]  # Exclude the header row
-            fixAge(data_rows)
-            fixDate(data_rows)
-            fixLongLat(data_rows)  
-            fixCity(data_rows)
-            fixSymptom(data_rows)
+            dataRows = rows[1:]  # Exclude the header row
+            fixAge(dataRows)
+            fixDate(dataRows)
+            fixLongLat(dataRows)  
+            fixCity(dataRows)
+            fixSymptom(dataRows)
 
             # Write the modified rows to the output file after all functions have run
-            for row in data_rows:
+            for row in dataRows:
                 writer.writerow(row)
 
 if __name__ == '__main__':
